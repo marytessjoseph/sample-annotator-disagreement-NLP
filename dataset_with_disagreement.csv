@@ -1,6 +1,0 @@
-sentence,ann1,ann2,ann3,ann4,ann5,disagreement_score,disagreement_category
-The movie was interesting,P,U,P,N,U,1.5219280948873621,High
-I loved this phone,P,P,P,P,P,-0.0,Low
-The service was not good,N,N,N,N,U,0.7219280948873623,High
-The food was okay,U,U,P,U,N,1.3709505944546687,High
-Yeah great job breaking it,N,P,N,N,U,1.3709505944546687,High
