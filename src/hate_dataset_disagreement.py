@@ -27,6 +27,8 @@ def calculate_entropy(labels):
 
 # =========================
 # Function to classify disagreement
+# thershold is hardcoded according to the input, 
+#needs to explore how to find it according to input
 # =========================
 def disagreement_category(score, threshold=0.5):
     return "High" if score >= threshold else "Low"
