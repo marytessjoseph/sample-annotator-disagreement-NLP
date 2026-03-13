@@ -1,4 +1,4 @@
-Prerequistes: Python ide , any terminal( we have used spyder and anaconda prompt here)
+**Prerequistes:** Python ide , any terminal( we have used spyder and anaconda prompt here)
 
 Libraries: pandas, numpy
 
