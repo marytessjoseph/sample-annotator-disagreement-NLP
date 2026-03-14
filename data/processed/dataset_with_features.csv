@@ -1,0 +1,6 @@
+sentence,ann1,ann2,ann3,ann4,ann5,disagreement_score,disagreement_category,sentence_length,negation_count,pronoun_count,hedge_count,question_mark_count,exclamation_mark_count
+The movie was interesting,P,U,P,N,U,1.521928094887362,High,4,0,0,0,0,0
+I loved this phone,P,P,P,P,P,-0.0,Low,4,0,1,0,0,0
+The service was not good,N,N,N,N,U,0.7219280948873623,Low,5,1,0,0,0,0
+The food was okay,U,U,P,U,N,1.3709505944546687,High,4,0,0,0,0,0
+Yeah great job breaking it,N,P,N,N,U,1.3709505944546687,High,5,0,1,0,0,0
