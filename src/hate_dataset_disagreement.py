@@ -27,13 +27,15 @@ def calculate_entropy(labels):
 
 # =========================
 # Function to classify disagreement
+# thershold is hardcoded according to the input, 
+#needs to explore how to find it according to input
 # =========================
 def disagreement_category(score, threshold=0.5):
     return "High" if score >= threshold else "Low"
 
 
 # =========================
-# Extract label list from annotators column
+# Extract label list
 # =========================
 def extract_labels(annotator_string):
     if pd.isna(annotator_string):
@@ -47,7 +49,7 @@ def extract_labels(annotator_string):
 
 
 # =========================
-# Reconstruct sentence from post_tokens
+# Reconstruct sentence
 # =========================
 def extract_sentence(post_tokens_string):
     if pd.isna(post_tokens_string):
@@ -58,12 +60,9 @@ def extract_sentence(post_tokens_string):
 
 
 # =========================
-# Main
+# Main processing
 # =========================
 def main():
-    print(f"Project root: {PROJECT_ROOT}")
-    print(f"Reading from: {INPUT_PATH}")
-    print(f"Writing to  : {OUTPUT_PATH}")
 
     if not INPUT_PATH.exists():
         raise FileNotFoundError(f"Input file not found: {INPUT_PATH}")
@@ -72,10 +71,10 @@ def main():
 
     required_cols = ["id", "annotators", "post_tokens"]
     missing_cols = [col for col in required_cols if col not in df.columns]
+
     if missing_cols:
         raise ValueError(
-            f"Dataset is missing required columns: {missing_cols}\n"
-            f"Available columns: {df.columns.tolist()}"
+            f"Dataset missing columns: {missing_cols}"
         )
 
     df["label_list"] = df["annotators"].apply(extract_labels)
@@ -83,32 +82,14 @@ def main():
     df["disagreement_category"] = df["disagreement_score"].apply(disagreement_category)
     df["sentence"] = df["post_tokens"].apply(extract_sentence)
 
-    # =========================
-    # SHOW SAMPLE OUTPUT
-    # =========================
-    print("\nSample processed rows:\n")
-
-    sample = df[[
-        "id",
-        "sentence",
-        "label_list",
-        "disagreement_score",
-        "disagreement_category"
-    ]].head(5)
-
-    print(sample.to_string(index=False))
-
-    print("\nDataset shape:", df.shape)
-
-    # =========================
-    # Save processed dataset
-    # =========================
-
     OUTPUT_PATH.parent.mkdir(parents=True, exist_ok=True)
     df.to_csv(OUTPUT_PATH, index=False)
 
-    print(f"Updated processed file: {OUTPUT_PATH}")
+    return df
 
 
+# =========================
+# Run script
+# =========================
 if __name__ == "__main__":
-    main()
+    df = main()
