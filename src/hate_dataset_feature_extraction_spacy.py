@@ -1,433 +1,219 @@
+
 # ==============================================================
 # hate_dataset_feature_extraction_spacy.py
-#
-# Purpose:
-# Extract interpretable linguistic features from the HateXplain
-# dataset using spaCy and measure processing time per batch.
-#
-# This script corresponds to:
-# Module D: Linguistic Feature Extraction
-#
-# Input:
-# hatexplain_with_disagreement.csv
-#
-# Output:
-# hatexplain_with_features.csv
-#
+# Extract only spaCy-derived linguistic features
 # ==============================================================
 
+import os
+import time
+import math
+import pandas as pd
+import numpy as np
+import spacy
 
-# --------------------------------------------------------------
-# Import required libraries
-# --------------------------------------------------------------
-
-import os              # for file path operations
-import re              # for regex pattern matching
-import time            # for measuring processing time
-import math            # for batch calculations
-import pandas as pd    # for dataset manipulation
-import numpy as np     # for numeric operations
-import spacy           # NLP library used for linguistic analysis
-
-
-# --------------------------------------------------------------
-# Step 0: Load spaCy language model
-# --------------------------------------------------------------
-# spaCy provides:
-# - tokenization
-# - part-of-speech tagging
-# - dependency parsing
-# - sentence segmentation
-
+# Load spaCy model
 try:
     nlp = spacy.load("en_core_web_sm")
 except OSError:
-    raise OSError(
-        "spaCy model 'en_core_web_sm' is not installed.\n"
-        "Run this first:\n"
-        "python -m spacy download en_core_web_sm"
-    )
+    raise OSError("Install spaCy model first: python -m spacy download en_core_web_sm")
 
-
-# --------------------------------------------------------------
-# Step 1: Define input/output file paths
-# --------------------------------------------------------------
-
+# File paths
 BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+INPUT_PATH = os.path.join(BASE_DIR, "data", "processed", "hatexplain_with_disagreement.csv")
+OUTPUT_PATH = os.path.join(BASE_DIR, "data", "processed", "hatexplain_with_features.csv")
 
-INPUT_PATH = os.path.join(
-    BASE_DIR,
-    "data",
-    "processed",
-    "hatexplain_with_disagreement.csv"
-)
-
-OUTPUT_PATH = os.path.join(
-    BASE_DIR,
-    "data",
-    "processed",
-    "hatexplain_with_features.csv"
-)
-
-
-# --------------------------------------------------------------
-# Step 2: Load dataset
-# --------------------------------------------------------------
-
+# Load dataset
 df = pd.read_csv(INPUT_PATH)
 
-print("Input dataset preview:")
+print("Dataset preview:")
 print(df.head())
-
-print("\n" + "-" * 60 + "\n")
-
-
-# --------------------------------------------------------------
-# Step 3: Verify required columns exist
-# --------------------------------------------------------------
-
-required_cols = [
-    "id",
-    "sentence",
-    "disagreement_score",
-    "disagreement_category"
-]
-
-missing_cols = [c for c in required_cols if c not in df.columns]
-
-if missing_cols:
-    raise ValueError(f"Missing required columns: {missing_cols}")
-
-
-# --------------------------------------------------------------
-# Step 4: Define lexical resources
-# --------------------------------------------------------------
-# These lists represent interpretable linguistic markers.
-
-# Negation cues
-NEGATIONS = {
-    "no","not","never","none","nothing","nowhere","neither","nor",
-    "cannot","can't","dont","don't","doesnt","doesn't",
-    "didnt","didn't","wont","won't","wouldnt","wouldn't"
-}
-
-# Hedging / uncertainty words
-HEDGES = {
-    "maybe","perhaps","possibly","probably","likely","unlikely",
-    "seems","appear","might","may","could","generally","sometimes"
-}
-
-# Hedging phrases
-HEDGE_PHRASES = {
-    "i think",
-    "i guess",
-    "i believe",
-    "in my opinion"
-}
-
-# Ambiguity markers
-AMBIGUITY_CUES = {
-    "some","someone","something","maybe","perhaps","kind","sort",
-    "stuff","things","whatever"
-}
-
-# Sarcasm / informal markers
-SARCASM_MARKERS = {
-    "yeah right",
-    "sure",
-    "obviously",
-    "lol",
-    "lmao",
-    "haha"
-}
-
-# Pronoun sets
-FIRST_PERSON_PRONOUNS = {"i","me","my","mine","we","us","our"}
-SECOND_PERSON_PRONOUNS = {"you","your","yours","u","ur"}
-THIRD_PERSON_PRONOUNS = {"he","she","they","them","their","it"}
-
-
-# --------------------------------------------------------------
-# Step 5: Helper functions
-# --------------------------------------------------------------
-
-def contains_phrase(text, phrase_set):
-    """
-    Count occurrences of phrases within a text.
-    """
-    text_lower = text.lower()
-
-    count = 0
-
-    for phrase in phrase_set:
-        if phrase in text_lower:
-            count += 1
-
-    return count
-
-
-def get_dependency_depth(token):
-    """
-    Compute approximate depth of a token in dependency tree.
-    """
-
-    depth = 0
-    current = token
-
-    while current.head != current:
-        depth += 1
-        current = current.head
-
-    return depth
 
 
 def safe_divide(a, b):
-    """
-    Prevent division by zero errors.
-    """
-    return a / b if b != 0 else 0.0
+    return a / b if b else 0.0
 
 
-# --------------------------------------------------------------
-# Step 6: Feature extraction function
-# --------------------------------------------------------------
+def dependency_depth(token):
+    depth = 0
+    while token.head != token:
+        depth += 1
+        token = token.head
+    return depth
 
-def extract_features(doc, raw_text):
 
-    """
-    Extract linguistic features from a spaCy document.
-    """
-
-    text = str(raw_text)
-
+def extract_features(doc, text):
     tokens = [t for t in doc if not t.is_space]
     alpha_tokens = [t for t in tokens if t.is_alpha]
+    sents = list(doc.sents)
 
-    token_texts = [t.text.lower() for t in tokens]
-    alpha_texts = [t.text.lower() for t in alpha_tokens]
+    lemmas = [t.lemma_.lower() for t in alpha_tokens]
+    depths = [dependency_depth(t) for t in tokens] if tokens else [0]
 
-    # ----------------------------------------------------------
-    # Surface-level features
-    # ----------------------------------------------------------
-
+    # Surface / length
     sentence_length_tokens = len(tokens)
     sentence_length_chars = len(text)
+    avg_token_length = np.mean([len(t.text) for t in tokens]) if tokens else 0.0
+    sentence_count = len(sents) if sents else 1
+    avg_sentence_length = safe_divide(sentence_length_tokens, sentence_count)
 
-    avg_token_length = (
-        np.mean([len(t.text) for t in tokens])
-        if tokens else 0
-    )
+    # Coarse POS counts
+    noun_count = sum(t.pos_ == "NOUN" for t in tokens)
+    proper_noun_count = sum(t.pos_ == "PROPN" for t in tokens)
+    verb_count = sum(t.pos_ == "VERB" for t in tokens)
+    aux_count = sum(t.pos_ == "AUX" for t in tokens)
+    adj_count = sum(t.pos_ == "ADJ" for t in tokens)
+    adv_count = sum(t.pos_ == "ADV" for t in tokens)
+    pronoun_count = sum(t.pos_ == "PRON" for t in tokens)
+    det_count = sum(t.pos_ == "DET" for t in tokens)
+    adp_count = sum(t.pos_ == "ADP" for t in tokens)
+    part_count = sum(t.pos_ == "PART" for t in tokens)
+    cconj_count = sum(t.pos_ == "CCONJ" for t in tokens)
+    sconj_count = sum(t.pos_ == "SCONJ" for t in tokens)
+    num_count = sum(t.pos_ == "NUM" for t in tokens)
 
-    # ----------------------------------------------------------
-    # Negation
-    # ----------------------------------------------------------
+    # Fine-grained grammatical tags from spaCy
+    modal_count = sum(t.tag_ == "MD" for t in tokens)
+    wh_word_count = sum(t.tag_ in {"WDT", "WP", "WP$", "WRB"} for t in tokens)
 
-    negation_count = sum(
-        1 for tok in token_texts if tok in NEGATIONS
-    )
+    # Dependency counts
+    negation_count = sum(t.dep_ == "neg" for t in tokens)
+    subject_count = sum(t.dep_ in {"nsubj", "nsubjpass", "csubj", "expl"} for t in tokens)
+    object_count = sum(t.dep_ in {"dobj", "obj", "iobj", "pobj"} for t in tokens)
+    passive_subject_count = sum(t.dep_ == "nsubjpass" for t in tokens)
+    root_count = sum(t.dep_ == "ROOT" for t in tokens)
+    clause_count = sum(t.dep_ in {"ccomp", "xcomp", "advcl", "relcl", "acl"} for t in tokens)
+    conjunction_dep_count = sum(t.dep_ == "conj" for t in tokens)
+    prep_dep_count = sum(t.dep_ == "prep" for t in tokens)
+    agent_dep_count = sum(t.dep_ == "agent" for t in tokens)
 
-    negation_binary = 1 if negation_count > 0 else 0
+    # Tree / syntactic complexity
+    max_dependency_depth = max(depths)
+    mean_dependency_depth = float(np.mean(depths))
+    avg_children_per_token = float(np.mean([len(list(t.children)) for t in tokens])) if tokens else 0.0
 
+    # Ratios
+    lexical_diversity = safe_divide(len(set(lemmas)), len(lemmas))
+    content_word_count = sum(t.pos_ in {"NOUN", "PROPN", "VERB", "ADJ", "ADV"} for t in tokens)
+    content_word_ratio = safe_divide(content_word_count, len(tokens))
+    noun_verb_ratio = safe_divide(noun_count + proper_noun_count, verb_count + aux_count)
+    pronoun_ratio = safe_divide(pronoun_count, len(tokens))
+    punctuation_ratio = safe_divide(sum(t.is_punct for t in tokens), len(tokens))
 
-    # ----------------------------------------------------------
-    # Hedging
-    # ----------------------------------------------------------
+    # Entity / sentence structure
+    entity_count = len(doc.ents)
+    avg_entities_per_sentence = safe_divide(entity_count, sentence_count)
 
-    hedge_count = (
-        sum(1 for tok in alpha_texts if tok in HEDGES)
-        + contains_phrase(text, HEDGE_PHRASES)
-    )
-
-    hedging_binary = 1 if hedge_count > 0 else 0
-
-
-    # ----------------------------------------------------------
-    # Pronouns
-    # ----------------------------------------------------------
-
-    first_person = sum(1 for tok in token_texts if tok in FIRST_PERSON_PRONOUNS)
-    second_person = sum(1 for tok in token_texts if tok in SECOND_PERSON_PRONOUNS)
-    third_person = sum(1 for tok in token_texts if tok in THIRD_PERSON_PRONOUNS)
-
-    pronoun_total = first_person + second_person + third_person
-
-
-    # ----------------------------------------------------------
-    # Ambiguity
-    # ----------------------------------------------------------
-
-    ambiguity_count = sum(
-        1 for tok in alpha_texts if tok in AMBIGUITY_CUES
-    )
-
-    ambiguity_binary = 1 if ambiguity_count > 0 else 0
-
-
-    # ----------------------------------------------------------
-    # Sarcasm indicators
-    # ----------------------------------------------------------
-
-    sarcasm_count = (
-        contains_phrase(text, SARCASM_MARKERS)
-        + text.count("lol")
-        + text.count("haha")
-    )
-
-    sarcasm_binary = 1 if sarcasm_count > 0 else 0
-
-
-    # ----------------------------------------------------------
-    # POS-based features
-    # ----------------------------------------------------------
-
-    noun_count = sum(1 for t in tokens if t.pos_ in {"NOUN","PROPN"})
-    verb_count = sum(1 for t in tokens if t.pos_ in {"VERB","AUX"})
-    adj_count = sum(1 for t in tokens if t.pos_ == "ADJ")
-    adv_count = sum(1 for t in tokens if t.pos_ == "ADV")
-
-
-    # ----------------------------------------------------------
-    # Syntactic complexity
-    # ----------------------------------------------------------
-
-    dependency_depths = [get_dependency_depth(t) for t in tokens]
-
-    max_depth = max(dependency_depths) if dependency_depths else 0
-    mean_depth = np.mean(dependency_depths) if dependency_depths else 0
-
-
-    # ----------------------------------------------------------
-    # Lexical diversity
-    # ----------------------------------------------------------
-
-    lexical_diversity = safe_divide(
-        len(set(alpha_texts)),
-        len(alpha_texts)
-    )
-
-
-    # ----------------------------------------------------------
-    # Return features as dictionary
-    # ----------------------------------------------------------
+    # Punctuation directly from text
+    exclamation_count = text.count("!")
+    question_count = text.count("?")
+    comma_count = text.count(",")
+    semicolon_count = text.count(";")
+    colon_count = text.count(":")
+    repeated_punctuation_binary = int(("!!" in text) or ("??" in text) or ("?!" in text) or ("!?" in text))
 
     return {
-
         "sentence_length_tokens": sentence_length_tokens,
         "sentence_length_chars": sentence_length_chars,
-        "avg_token_length": avg_token_length,
-
-        "negation_count": negation_count,
-        "negation_binary": negation_binary,
-
-        "hedging_count": hedge_count,
-        "hedging_binary": hedging_binary,
-
-        "pronoun_total_count": pronoun_total,
-
-        "ambiguity_count": ambiguity_count,
-        "ambiguity_binary": ambiguity_binary,
-
-        "sarcasm_marker_count": sarcasm_count,
-        "sarcasm_binary": sarcasm_binary,
+        "avg_token_length": round(avg_token_length, 3),
+        "sentence_count": sentence_count,
+        "avg_sentence_length": round(avg_sentence_length, 3),
 
         "noun_count": noun_count,
+        "proper_noun_count": proper_noun_count,
         "verb_count": verb_count,
+        "aux_count": aux_count,
         "adj_count": adj_count,
         "adv_count": adv_count,
+        "pronoun_count": pronoun_count,
+        "det_count": det_count,
+        "adp_count": adp_count,
+        "part_count": part_count,
+        "cconj_count": cconj_count,
+        "sconj_count": sconj_count,
+        "num_count": num_count,
 
-        "max_dependency_depth": max_depth,
-        "mean_dependency_depth": mean_depth,
+        "modal_count": modal_count,
+        "wh_word_count": wh_word_count,
 
-        "lexical_diversity": lexical_diversity
+        "negation_count": negation_count,
+        "subject_count": subject_count,
+        "object_count": object_count,
+        "passive_subject_count": passive_subject_count,
+        "root_count": root_count,
+        "clause_count": clause_count,
+        "conjunction_dep_count": conjunction_dep_count,
+        "prep_dep_count": prep_dep_count,
+        "agent_dep_count": agent_dep_count,
+
+        "max_dependency_depth": max_dependency_depth,
+        "mean_dependency_depth": round(mean_dependency_depth, 3),
+        "avg_children_per_token": round(avg_children_per_token, 3),
+
+        "lexical_diversity": round(lexical_diversity, 3),
+        "content_word_count": content_word_count,
+        "content_word_ratio": round(content_word_ratio, 3),
+        "noun_verb_ratio": round(noun_verb_ratio, 3),
+        "pronoun_ratio": round(pronoun_ratio, 3),
+        "punctuation_ratio": round(punctuation_ratio, 3),
+
+        "entity_count": entity_count,
+        "avg_entities_per_sentence": round(avg_entities_per_sentence, 3),
+
+        "exclamation_count": exclamation_count,
+        "question_count": question_count,
+        "comma_count": comma_count,
+        "semicolon_count": semicolon_count,
+        "colon_count": colon_count,
+        "repeated_punctuation_binary": repeated_punctuation_binary,
     }
 
 
-# --------------------------------------------------------------
-# Step 7: Run spaCy pipeline in batches
-# --------------------------------------------------------------
-
-print("Running spaCy feature extraction...")
-
-batch_size = 64
-
+# Batch processing
 texts = df["sentence"].fillna("").astype(str).tolist()
-
+batch_size = 64
 total_texts = len(texts)
 total_batches = math.ceil(total_texts / batch_size)
 
-print(f"Total texts: {total_texts}")
+print(f"\nTotal texts: {total_texts}")
 print(f"Batch size: {batch_size}")
-print(f"Total batches: {total_batches}")
-
-print("\n" + "-" * 60 + "\n")
+print(f"Total batches: {total_batches}\n")
 
 features = []
+overall_start = time.time()
 
-overall_start_time = time.time()
-
-
-for batch_num, start_idx in enumerate(range(0, total_texts, batch_size), start=1):
-
+for start_idx in range(0, total_texts, batch_size):
     end_idx = min(start_idx + batch_size, total_texts)
-
     batch_texts = texts[start_idx:end_idx]
-
-    batch_start = time.time()
-
     docs = list(nlp.pipe(batch_texts, batch_size=batch_size))
 
-    for local_idx, doc in enumerate(docs):
+    for i, doc in enumerate(docs):
+        features.append(extract_features(doc, batch_texts[i]))
 
-        global_idx = start_idx + local_idx
+total_time = time.time() - overall_start
+print(f"Feature extraction completed in {total_time:.2f}s")
 
-        features.append(
-            extract_features(doc, texts[global_idx])
-        )
-
-    batch_time = time.time() - batch_start
-
-    processed = end_idx
-
-    print(
-        f"Batch {batch_num}/{total_batches} | "
-        f"Rows {start_idx}-{end_idx-1} | "
-        f"Batch time: {batch_time:.2f}s | "
-        f"Processed: {processed}/{total_texts}"
-    )
-
-
-total_time = time.time() - overall_start_time
-
-print("\nFeature extraction completed in", round(total_time,2),"seconds")
-
-
-# --------------------------------------------------------------
-# Step 8: Merge features with original dataset
-# --------------------------------------------------------------
-
+# Merge and save
 features_df = pd.DataFrame(features)
-
-final_df = pd.concat(
-    [
-        df.reset_index(drop=True),
-        features_df
-    ],
-    axis=1
-)
+final_df = pd.concat([df.reset_index(drop=True), features_df], axis=1)
 
 print("\nFinal dataset preview:")
 print(final_df.head())
-
 print("\nDataset shape:", final_df.shape)
 
-
-# --------------------------------------------------------------
-# Step 9: Save output dataset
-# --------------------------------------------------------------
-
 os.makedirs(os.path.dirname(OUTPUT_PATH), exist_ok=True)
-
 final_df.to_csv(OUTPUT_PATH, index=False)
 
 print("\nProcessed feature dataset saved to:")
 print(OUTPUT_PATH)
+
+
+
+
+
+
+
+
+
+
+
+
